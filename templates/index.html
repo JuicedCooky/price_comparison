@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Price Aggregator</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+        .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
+        input[type="text"] { padding: 10px; width: 70%; font-size: 16px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        .store-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }
+        .delete-btn { background-color: #ff4d4d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .delete-btn:hover { background-color: #cc0000; }
+    </style>
+</head>
+<body>
+
+    <h1>🤖 Price Tracker</h1>
+
+    <div class="card">
+        <h3>1. Manage Managed Stores</h3>
+        <input type="text" id="storeUrl" placeholder="https://pandahobby.ca">
+        <button onclick="addStore()">Add Store</button>
+        <p id="storeStatus" style="font-weight: bold; color: blue;"></p>
+        
+        <h4>Currently Tracked Engines:</h4>
+        <div id="storeList"><i>Loading configuration layout...</i></div>
+    </div>
+
+    <div class="card">
+        <h3>2. Search for a Product</h3>
+        <input type="text" id="searchQuery" placeholder="e.g., Gundam RX-78">
+        <button onclick="searchPrices()">Search</button>
+    </div>
+
+    <h2>Results:</h2>
+    <div id="resultsBox">Waiting for search execution...</div>
+
+    <script>
+        // Run immediately when the browser finishes page rendering
+        window.onload = function() {
+            fetchTrackedStores();
+        };
+
+        // Queries backend memory to render all loaded targets
+        async function fetchTrackedStores() {
+            const response = await fetch('/stores/');
+            const data = await response.json();
+            const listContainer = document.getElementById('storeList');
+            
+            if (data.stores.length === 0) {
+                listContainer.innerHTML = "<p style='color: gray;'>No targets currently configured. Add one above!</p>";
+                return;
+            }
+
+            listContainer.innerHTML = "";
+            data.stores.forEach(url => {
+                listContainer.innerHTML += `
+                    <div class="store-item">
+                        <span>🌐 ${url}</span>
+                        <button class="delete-btn" onclick="removeStore('${url}')">Remove</button>
+                    </div>
+                `;
+            });
+        }
+
+        async function addStore() {
+            const url = document.getElementById('storeUrl').value.trim();
+            if(!url) return;
+            
+            document.getElementById('storeStatus').innerText = "Analyzing domain structure and saving...";
+            
+            const response = await fetch(`/add-store/?store_url=${encodeURIComponent(url)}`, { method: 'POST' });
+            const data = await response.json();
+            
+            document.getElementById('storeStatus').innerText = data.message;
+            document.getElementById('storeUrl').value = ""; // Clear input box
+            
+            fetchTrackedStores(); // Refresh tracking component array view
+        }
+
+        async function removeStore(url) {
+            if(!confirm(`Stop tracking and delete ${url}?`)) return;
+            
+            const response = await fetch(`/remove-store/?store_url=${encodeURIComponent(url)}`, { method: 'DELETE' });
+            const data = await response.json();
+            
+            alert(data.message);
+            fetchTrackedStores(); // Refresh tracking component array view
+        }
+
+        async function searchPrices() {
+            const query = document.getElementById('searchQuery').value;
+            if(!query.trim()) return;
+            document.getElementById('resultsBox').innerHTML = "<i>Aggregating responses across live targets...</i>";
+            
+            const response = await fetch(`/search/?query=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            
+            document.getElementById('resultsBox').innerHTML = "";
+            if(data.results.length === 0) {
+                document.getElementById('resultsBox').innerHTML = "No matched items found across sources.";
+                return;
+            }
+
+            data.results.forEach(item => {
+                document.getElementById('resultsBox').innerHTML += `
+                    <div class="card">
+                        <strong>🏪 ${item.store}</strong><br>
+                        ${item.product} - <span style="color: green; font-weight: bold;">$${(item.price / 100).toFixed(2)}</span>
+                        <br><a href="${item.url}" target="_blank" style="font-size: 13px; color: blue;">View Product Page →</a>
+                    </div>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
