@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import sys
 from collections import defaultdict
 import requests
 from fastapi import FastAPI, Request
@@ -9,14 +10,40 @@ from fastapi.templating import Jinja2Templates
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 import cloudscraper
+from contextlib import asynccontextmanager
+import sqlite3
 
 # Matches price-like text: $12.99  /  12,99 €  /  ¥1000  etc.
 _PRICE_RE = re.compile(r'[\$£€¥]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*[\$£€¥]')
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Replaces the deprecated @app.on_event('startup') pattern."""
+    init_db()
+    saved_urls = load_stores_from_file()
+    print(f"\n📂 Loading {len(saved_urls)} saved stores from disk...")
+    for url in saved_urls:
+        config = discover_store_search_config(url)
+        STORE_REGISTRY[config["store_url"]] = config
+    print("🏁 Server preparation complete.\n")
+    yield  # server runs here
+
+app = FastAPI(lifespan=lifespan)
+
+# --- FIX: Dynamic path resolution for PyInstaller ---
+if hasattr(sys, '_MEIPASS'):
+    # Running as a PyInstaller executable
+    base_dir = sys._MEIPASS
+else:
+    # Running as a normal Python script
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+template_path = os.path.join(base_dir, "templates")
+templates = Jinja2Templates(directory=template_path)
+# ----------------------------------------------------
 
 STORAGE_FILE = "stores.json"
+DB_FILE       = "price_tracker.db"
 STORE_REGISTRY = {}
 
 scraper = cloudscraper.create_scraper(browser={
@@ -43,6 +70,111 @@ def save_stores_to_file(urls):
             json.dump(urls, f, indent=4)
     except Exception as e:
         print(f"❌ Failed to save stores to disk: {e}")
+
+# ── SQLite: setup ──────────────────────────────────────────────────────────
+
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Creates all tables on first run; safe to call on every startup."""
+    with get_db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS searches (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                query        TEXT    NOT NULL,
+                timestamp    TEXT    NOT NULL DEFAULT (datetime('now')),
+                result_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS search_results (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                search_id INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                store     TEXT NOT NULL,
+                product   TEXT NOT NULL,
+                price     TEXT,
+                url       TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS page_cache (
+                url        TEXT PRIMARY KEY,
+                content    BLOB NOT NULL,
+                cached_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                expires_at TEXT NOT NULL
+            );
+
+            PRAGMA journal_mode=WAL;
+        """)
+    print("🗄️  Database ready.")
+
+# ── SQLite: page cache ─────────────────────────────────────────────────────
+
+def cache_get(cache_key: str) -> bytes | None:
+    """Returns cached page bytes if the entry exists and hasn't expired."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT content FROM page_cache WHERE url = ? AND expires_at > datetime('now')",
+            (cache_key,)
+        ).fetchone()
+        return bytes(row["content"]) if row else None
+
+def cache_set(cache_key: str, content: bytes, ttl: int = 3600):
+    """Stores raw page bytes; ttl is seconds until the entry expires."""
+    with get_db() as conn:
+        conn.execute(
+            f"""INSERT OR REPLACE INTO page_cache (url, content, cached_at, expires_at)
+                VALUES (?, ?, datetime('now'), datetime('now', '+{ttl} seconds'))""",
+            (cache_key, content)
+        )
+
+# ── SQLite: search history ─────────────────────────────────────────────────
+
+def save_search_to_db(query: str, results: list):
+    """Saves a completed search and every result row to the database."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO searches (query, result_count) VALUES (?, ?)",
+            (query, len(results))
+        )
+        if results:
+            conn.executemany(
+                """INSERT INTO search_results (search_id, store, product, price, url)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [(cur.lastrowid, r["store"], r["product"], r["price"], r["url"])
+                 for r in results]
+            )
+
+# ── Cached HTTP fetch ──────────────────────────────────────────────────────
+
+class _CachedResponse:
+    """Minimal requests.Response stand-in for serving cached content."""
+    def __init__(self, content: bytes, status_code: int = 200):
+        self.content    = content
+        self.status_code = status_code
+
+    def json(self):
+        return json.loads(self.content)
+
+def cached_scrape(url: str, params: dict = None, ttl: int = 3600):
+    """
+    Fetches url (with params) via cloudscraper, caching raw bytes in SQLite.
+    ttl — seconds the cached response stays valid (default 1 h).
+    Returns an object with .content, .status_code, and .json().
+    """
+    from urllib.parse import urlencode
+    cache_key = url + ("?" + urlencode(sorted(params.items())) if params else "")
+
+    hit = cache_get(cache_key)
+    if hit is not None:
+        print(f"  💾 Cache hit: {cache_key[:100]}")
+        return _CachedResponse(hit)
+
+    res = scraper.get(url, params=params, timeout=5)
+    if res.status_code == 200:
+        cache_set(cache_key, res.content, ttl)
+    return res
 
 def _structural_selector(soup) -> str | None:
     """
@@ -131,8 +263,8 @@ def discover_html_selectors(search_endpoint: str, query_param: str, headers: dic
     ]
 
     try:
-        # 1. Use "mouse" instead of "a", and REMOVE headers=headers
-        res = scraper.get(search_endpoint, params={query_param: "mouse"}, timeout=5)
+        # Long TTL: site structure changes rarely, no need to re-probe each startup
+        res = cached_scrape(search_endpoint, params={query_param: "mouse"}, ttl=86400)
         soup = BeautifulSoup(res.content, "html.parser")
 
         # 2. THE NUKE: Destroy headers, footers, and carts from memory before scanning
@@ -226,7 +358,7 @@ def discover_store_search_config(base_url: str) -> dict:
     # --- Shopify Test ---
     try:
         shopify_test_url = f"{clean_base_url}/search/suggest.json?q=test&resources[type]=product"
-        res = scraper.get(shopify_test_url, timeout=3)
+        res = cached_scrape(shopify_test_url, ttl=86400)
         if res.status_code == 200 and "resources" in res.json():
             return {
                 "store_url": clean_base_url,
@@ -239,7 +371,7 @@ def discover_store_search_config(base_url: str) -> dict:
 
     # --- HTML Form Fallback Test ---
     try:
-        res = scraper.get(clean_base_url, timeout=4)
+        res = cached_scrape(clean_base_url, ttl=86400)
         soup = BeautifulSoup(res.content, "html.parser")
         forms = soup.find_all("form")
         for form in forms:
@@ -272,15 +404,15 @@ def discover_store_search_config(base_url: str) -> dict:
         "selectors": selectors,
     }
 
-@app.on_event("startup")
-def initialize_store_configs():
-    """Runs automatically on startup to map saved targets."""
-    saved_urls = load_stores_from_file()
-    print(f"\n📂 Loading {len(saved_urls)} saved stores from disk...")
-    for url in saved_urls:
-        config = discover_store_search_config(url)
-        STORE_REGISTRY[config["store_url"]] = config
-    print("🏁 Server preparation complete.\n")
+# @app.on_event("startup")
+# def initialize_store_configs():
+#     """Runs automatically on startup to map saved targets."""
+#     saved_urls = load_stores_from_file()
+#     print(f"\n📂 Loading {len(saved_urls)} saved stores from disk...")
+#     for url in saved_urls:
+#         config = discover_store_search_config(url)
+#         STORE_REGISTRY[config["store_url"]] = config
+#     print("🏁 Server preparation complete.\n")
 
 @app.get("/")
 def read_root(request: Request):
@@ -337,29 +469,31 @@ def remove_store(store_url: str):
 def search_prices(query: str):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     aggregated_results = []
+    store_statuses = {url: {"error": None} for url in STORE_REGISTRY}
 
     for base_url, config in STORE_REGISTRY.items():
         payload = {config["query_param"]: query}
-        
+
         if config["type"] == "shopify":
             payload["resources[type]"] = "product"
             try:
-                res = scraper.get(config["search_endpoint"], params=payload, timeout=4)
+                res = cached_scrape(config["search_endpoint"], params=payload, ttl=900)
                 if res.status_code == 200:
                     products = res.json().get("resources", {}).get("results", {}).get("products", [])
                     for prod in products:
                         raw_price = prod.get("price", 0)
-                        # Format Shopify's raw number into a nice string so HTML/Shopify match
                         formatted_price = f"${float(raw_price):.2f}" if raw_price else "N/A"
-                        
                         aggregated_results.append({
                             "store": base_url,
                             "product": prod.get("title"),
                             "price": formatted_price,
                             "url": f"{base_url}{prod.get('url')}"
                         })
+                else:
+                    store_statuses[base_url]["error"] = f"Request failed (HTTP {res.status_code})"
             except Exception as e:
                 print(f"Shopify exception at {base_url}: {e}")
+                store_statuses[base_url]["error"] = f"Request error: {e}"
 
         elif config["type"] == "html":
             selectors  = config.get("selectors", {})
@@ -369,11 +503,11 @@ def search_prices(query: str):
 
             if not c_sel:
                 print(f"⚠️  No selectors for {base_url} — skipping.")
+                store_statuses[base_url]["error"] = "No product selectors found — try re-adding with a direct search URL"
                 continue
 
             try:
-                res = scraper.get(config["search_endpoint"],
-                                   params=payload, timeout=5)
+                res = cached_scrape(config["search_endpoint"], params=payload, ttl=900)
                 soup = BeautifulSoup(res.content, "html.parser")
 
                 for item in soup.select(c_sel):
@@ -395,5 +529,52 @@ def search_prices(query: str):
                         })
             except Exception as e:
                 print(f"HTML scrape exception at {base_url}: {e}")
+                store_statuses[base_url]["error"] = f"Scrape error: {e}"
 
-    return {"results": aggregated_results}
+    save_search_to_db(query, aggregated_results)
+    return {"results": aggregated_results, "store_statuses": store_statuses}
+
+@app.get("/history/")
+def get_history(limit: int = 30):
+    """Returns the most recent searches with their result counts."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, query, timestamp, result_count FROM searches ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    return {"history": [dict(r) for r in rows]}
+
+@app.get("/history/{search_id}/results")
+def get_history_results(search_id: int):
+    """Returns every saved result row for a specific past search."""
+    with get_db() as conn:
+        search = conn.execute(
+            "SELECT id, query, timestamp, result_count FROM searches WHERE id = ?",
+            (search_id,)
+        ).fetchone()
+        if not search:
+            return {"success": False, "message": "Search ID not found."}
+        results = conn.execute(
+            "SELECT store, product, price, url FROM search_results WHERE search_id = ?",
+            (search_id,)
+        ).fetchall()
+    return {"search": dict(search), "results": [dict(r) for r in results]}
+
+@app.delete("/history/clear")
+def clear_history():
+    """Wipes all search history and results (page cache is kept)."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM search_results")
+        conn.execute("DELETE FROM searches")
+    return {"success": True, "message": "Search history cleared."}
+
+@app.delete("/cache/clear")
+def clear_cache():
+    """Deletes all cached pages, forcing fresh fetches on the next request."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM page_cache")
+    return {"success": True, "message": "Page cache cleared."}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

@@ -5,147 +5,451 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Price Aggregator</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 40px auto; padding: 20px; }
-        .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
-        input[type="text"] { padding: 10px; width: 70%; font-size: 16px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-        .store-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }
-        .delete-btn { background-color: #ff4d4d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-        .delete-btn:hover { background-color: #cc0000; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; display: flex; height: 100vh; overflow: hidden; background: #f0f0f0; }
 
-        /* Results grid — one column per store */
-        #resultsBox { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-        .store-column { flex: 1 1 220px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; }
-        .store-column-header {
-            background: #2c2c2c; color: #fff;
-            padding: 10px 14px; font-size: 13px;
-            font-weight: bold; word-break: break-all;
+        /* ── Sidebar ── */
+        .sidebar { width: 170px; background: #1a1a1a; display: flex; flex-direction: column; flex-shrink: 0; padding-top: 20px; }
+        .sidebar-logo { color: #fff; font-size: 15px; font-weight: bold; padding: 0 16px 16px; border-bottom: 1px solid #333; margin-bottom: 8px; }
+        .tab-btn { background: none; border: none; border-left: 3px solid transparent; color: #999; font-size: 14px; padding: 13px 16px; text-align: left; cursor: pointer; transition: all 0.15s; width: 100%; }
+        .tab-btn:hover  { background: #262626; color: #fff; }
+        .tab-btn.active { background: #262626; color: #fff; border-left-color: #4a9eff; }
+
+        /* ── Main ── */
+        .main { flex: 1; overflow-y: auto; padding: 28px 32px; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* ── Cards / inputs ── */
+        .card { background: #fff; border: 1px solid #ddd; padding: 18px; margin-bottom: 16px; border-radius: 8px; }
+        input[type="text"] { padding: 9px 12px; width: 65%; font-size: 15px; border: 1px solid #ccc; border-radius: 4px; }
+        .action-btn { padding: 9px 18px; font-size: 15px; cursor: pointer; background: #2c2c2c; color: #fff; border: none; border-radius: 4px; margin-left: 8px; }
+        .action-btn:hover { background: #444; }
+        .action-btn.danger { background: #a00; }
+        .action-btn.danger:hover { background: #c00; }
+        .store-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }
+        .delete-btn { background: #ff4d4d; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .delete-btn:hover { background: #cc0000; }
+
+        /* ── Filter card ── */
+        .filter-card { border-left: 3px solid #ddd; transition: border-color 0.2s; }
+        .filter-card.has-filters { border-left-color: #4a9eff; }
+        .filter-title { font-size: 14px; font-weight: bold; margin-bottom: 12px; color: #444; }
+        .filter-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+        .filter-row:last-child { margin-bottom: 0; }
+        .filter-label { font-size: 13px; font-weight: bold; white-space: nowrap; padding-top: 8px; min-width: 115px; }
+        .include-label { color: #1a7a1a; }
+        .exclude-label { color: #a00; }
+        .tag-box {
+            flex: 1; display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+            min-height: 38px; padding: 5px 8px;
+            border: 1px solid #ccc; border-radius: 4px;
+            cursor: text; background: #fafafa;
         }
+        .tag-box:focus-within { border-color: #4a9eff; background: #fff; }
+        .tag { display: inline-flex; align-items: center; gap: 3px; border-radius: 12px; padding: 3px 9px; font-size: 13px; white-space: nowrap; }
+        .tag-include { background: #e6f4ea; color: #1a6a1a; border: 1px solid #a8d5b0; }
+        .tag-exclude { background: #fde8e8; color: #a00;    border: 1px solid #f5b5b5; }
+        .tag-x { cursor: pointer; font-size: 15px; line-height: 1; opacity: 0.55; }
+        .tag-x:hover { opacity: 1; }
+        .tag-input { border: none; outline: none; background: transparent; font-size: 14px; min-width: 120px; flex: 1; }
+
+        /* ── Results grid ── */
+        #resultsBox { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+        .store-column { flex: 1 1 220px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; background: #fff; }
+        .store-column-header { background: #2c2c2c; color: #fff; padding: 10px 14px; font-size: 13px; font-weight: bold; word-break: break-all; }
+        .store-column-header.has-error { background: #7a1a1a; }
+        .store-error { padding: 14px; font-size: 13px; color: #a00; background: #fff5f5; border-left: 3px solid #e00; }
+        .store-empty { padding: 14px; font-size: 13px; color: #666; background: #fafafa; border-left: 3px solid #ccc; }
         .product-entry { padding: 12px 14px; border-bottom: 1px solid #eee; font-size: 14px; }
         .product-entry:last-child { border-bottom: none; }
-        .product-entry .price { color: #1a7a1a; font-weight: bold; font-size: 15px; }
+        .product-entry .price { color: #1a7a1a; font-weight: bold; font-size: 15px; margin-top: 2px; }
         .product-entry a { color: #0057b8; font-size: 12px; display: block; margin-top: 4px; }
+
+        /* ── History ── */
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+        .history-item { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 13px 16px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.15s; user-select: none; }
+        .history-item:hover { border-color: #4a9eff; }
+        .history-item.open  { border-color: #4a9eff; }
+        .history-item-top   { display: flex; justify-content: space-between; align-items: center; }
+        .history-query      { font-weight: bold; font-size: 15px; }
+        .history-badge      { background: #2c2c2c; color: #fff; border-radius: 10px; padding: 2px 10px; font-size: 12px; white-space: nowrap; }
+        .history-time       { font-size: 12px; color: #888; margin-top: 4px; }
+        .history-results    { display: none; margin-top: 14px; }
+        .history-results.open { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
     </style>
 </head>
 <body>
 
-    <h1>🤖 Price Tracker</h1>
+    <nav class="sidebar">
+        <div class="sidebar-logo">🤖 PriceBot</div>
+        <button class="tab-btn active" onclick="switchTab('search', this)">🔍 Search</button>
+        <button class="tab-btn"        onclick="switchTab('history', this)">📜 History</button>
+    </nav>
 
-    <div class="card">
-        <h3>1. Manage Managed Stores</h3>
-        <input type="text" id="storeUrl" placeholder="https://pandahobby.ca">
-        <button onclick="addStore()">Add Store</button>
-        <p id="storeStatus" style="font-weight: bold; color: blue;"></p>
-        
-        <h4>Currently Tracked Engines:</h4>
-        <div id="storeList"><i>Loading configuration layout...</i></div>
-    </div>
+    <main class="main">
 
-    <div class="card">
-        <h3>2. Search for a Product</h3>
-        <input type="text" id="searchQuery" placeholder="e.g., Gundam RX-78">
-        <button onclick="searchPrices()">Search</button>
-    </div>
+        <!-- SEARCH PANEL -->
+        <div id="panel-search" class="panel active">
 
-    <h2>Results:</h2>
-    <div id="resultsBox">Waiting for search execution...</div>
+            <div class="card">
+                <h3 style="margin-bottom:12px;">Manage Stores</h3>
+                <input type="text" id="storeUrl" placeholder="pandahobby.ca or a full search URL">
+                <button class="action-btn" onclick="addStore()">Add Store</button>
+                <p id="storeStatus" style="font-weight:bold;color:#0057b8;margin-top:10px;min-height:18px;"></p>
+                <h4 style="margin:12px 0 8px;">Currently Tracked:</h4>
+                <div id="storeList"><i style="color:#888;">Loading...</i></div>
+            </div>
+
+            <div class="card">
+                <h3 style="margin-bottom:12px;">Search for a Product</h3>
+                <input type="text" id="searchQuery" placeholder="e.g., Gundam RX-78">
+                <button class="action-btn" onclick="searchPrices()">Search</button>
+            </div>
+
+            <!-- Filter card (search panel) -->
+            <div class="card filter-card" id="filter-card-search">
+                <div class="filter-title">🔎 Filter Results</div>
+                <div class="filter-row">
+                    <span class="filter-label include-label">✅ Must include</span>
+                    <div class="tag-box" onclick="document.getElementById('taginput-search-include').focus()">
+                        <span id="tags-search-include"></span>
+                        <input class="tag-input" id="taginput-search-include"
+                               placeholder="Word must appear in name — Enter to add"
+                               onkeydown="handleTagInput(event,'search','include')">
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label exclude-label">🚫 Must exclude</span>
+                    <div class="tag-box" onclick="document.getElementById('taginput-search-exclude').focus()">
+                        <span id="tags-search-exclude"></span>
+                        <input class="tag-input" id="taginput-search-exclude"
+                               placeholder="Word must NOT appear in name — Enter to add"
+                               onkeydown="handleTagInput(event,'search','exclude')">
+                    </div>
+                </div>
+            </div>
+
+            <h2 style="margin-bottom:14px;">Results</h2>
+            <div id="resultsBox"><p style="color:#888;">Run a search above to see results.</p></div>
+        </div>
+
+        <!-- HISTORY PANEL -->
+        <div id="panel-history" class="panel">
+            <div class="history-header">
+                <h2>📜 Search History</h2>
+                <button class="action-btn danger" onclick="clearHistory()">Clear History</button>
+            </div>
+
+            <!-- Filter card (history panel) -->
+            <div class="card filter-card" id="filter-card-history" style="margin-bottom:18px;">
+                <div class="filter-title">🔎 Filter Expanded Results</div>
+                <div class="filter-row">
+                    <span class="filter-label include-label">✅ Must include</span>
+                    <div class="tag-box" onclick="document.getElementById('taginput-history-include').focus()">
+                        <span id="tags-history-include"></span>
+                        <input class="tag-input" id="taginput-history-include"
+                               placeholder="Word must appear in name — Enter to add"
+                               onkeydown="handleTagInput(event,'history','include')">
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label exclude-label">🚫 Must exclude</span>
+                    <div class="tag-box" onclick="document.getElementById('taginput-history-exclude').focus()">
+                        <span id="tags-history-exclude"></span>
+                        <input class="tag-input" id="taginput-history-exclude"
+                               placeholder="Word must NOT appear in name — Enter to add"
+                               onkeydown="handleTagInput(event,'history','exclude')">
+                    </div>
+                </div>
+            </div>
+
+            <div id="historyList"><i style="color:#888;">Loading...</i></div>
+        </div>
+
+    </main>
 
     <script>
-        // Run immediately when the browser finishes page rendering
-        window.onload = function() {
-            fetchTrackedStores();
+        window.onload = () => fetchTrackedStores();
+
+        // ── Filter state ─────────────────────────────────────────────────────
+        const filterState = {
+            search:  { include: [], exclude: [] },
+            history: { include: [], exclude: [] }
         };
 
-        // Queries backend memory to render all loaded targets
+        // Last fetched data — used to re-render immediately on filter change
+        let lastSearchData    = null;  // { results, store_statuses }
+        let lastHistoryExpanded = null; // { id, results }
+
+        function handleTagInput(event, panel, type) {
+            const input = event.target;
+            const raw   = input.value.trim().replace(/,+$/, '');
+
+            if ((event.key === 'Enter' || event.key === ',') && raw) {
+                event.preventDefault();
+                addTag(panel, type, raw);
+                input.value = '';
+            } else if (event.key === 'Backspace' && input.value === '') {
+                const arr = filterState[panel][type];
+                if (arr.length) { arr.pop(); renderTags(panel, type); }
+            }
+        }
+
+        function addTag(panel, type, word) {
+            const w = word.trim().toLowerCase();
+            if (!w || filterState[panel][type].includes(w)) return;
+            filterState[panel][type].push(w);
+            renderTags(panel, type);
+            updateFilterCardStyle(panel);
+            reRenderPanel(panel);
+        }
+
+        function removeTag(panel, type, word) {
+            filterState[panel][type] = filterState[panel][type].filter(w => w !== word);
+            renderTags(panel, type);
+            updateFilterCardStyle(panel);
+            reRenderPanel(panel);
+        }
+
+        function reRenderPanel(panel) {
+            if (panel === 'search' && lastSearchData) {
+                renderResultColumns(
+                    document.getElementById('resultsBox'),
+                    lastSearchData.results,
+                    lastSearchData.store_statuses,
+                    'search'
+                );
+            } else if (panel === 'history' && lastHistoryExpanded) {
+                const { id, results } = lastHistoryExpanded;
+                const resultsDiv = document.getElementById(`hist-results-${id}`);
+                if (!resultsDiv) return;
+                const filtered = applyFilters(results, 'history');
+                const byStore  = {};
+                filtered.forEach(r => {
+                    if (!byStore[r.store]) byStore[r.store] = [];
+                    byStore[r.store].push(r);
+                });
+                resultsDiv.innerHTML = "";
+                if (!filtered.length) {
+                    resultsDiv.innerHTML = "<p style='color:gray;font-size:13px;'>No results match the current filters.</p>";
+                    return;
+                }
+                Object.entries(byStore).forEach(([store, items]) => {
+                    const col = document.createElement('div');
+                    col.className = 'store-column';
+                    col.innerHTML = `<div class="store-column-header">🏪 ${store} (${items.length})</div>`;
+                    items.forEach(item => {
+                        const e = document.createElement('div');
+                        e.className = 'product-entry';
+                        e.innerHTML = `<div>${item.product}</div><div class="price">${item.price}</div><a href="${item.url}" target="_blank">View Product →</a>`;
+                        col.appendChild(e);
+                    });
+                    resultsDiv.appendChild(col);
+                });
+            }
+        }
+
+        function renderTags(panel, type) {
+            const container = document.getElementById(`tags-${panel}-${type}`);
+            container.innerHTML = '';
+            filterState[panel][type].forEach(word => {
+                const tag = document.createElement('span');
+                tag.className = `tag tag-${type}`;
+                tag.innerHTML = `${word}<span class="tag-x" onclick="event.stopPropagation();removeTag('${panel}','${type}','${word}')"> ×</span>`;
+                container.appendChild(tag);
+            });
+        }
+
+        function updateFilterCardStyle(panel) {
+            const card = document.getElementById(`filter-card-${panel}`);
+            const hasAny = filterState[panel].include.length || filterState[panel].exclude.length;
+            card.classList.toggle('has-filters', !!hasAny);
+        }
+
+        function applyFilters(results, panel) {
+            const inc = filterState[panel].include;
+            const exc = filterState[panel].exclude;
+            if (!inc.length && !exc.length) return results;
+            return results.filter(item => {
+                const name = (item.product || '').toLowerCase();
+                if (inc.length && !inc.every(w => name.includes(w))) return false;
+                if (exc.some(w => name.includes(w))) return false;
+                return true;
+            });
+        }
+
+        // ── Tab switching ────────────────────────────────────────────────────
+        function switchTab(name, btn) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('panel-' + name).classList.add('active');
+            btn.classList.add('active');
+            if (name === 'history') fetchHistory();
+        }
+
+        // ── Store management ─────────────────────────────────────────────────
         async function fetchTrackedStores() {
-            const response = await fetch('/stores/');
-            const data = await response.json();
-            const listContainer = document.getElementById('storeList');
-            
+            const data = await fetch('/stores/').then(r => r.json());
+            const list = document.getElementById('storeList');
             if (data.stores.length === 0) {
-                listContainer.innerHTML = "<p style='color: gray;'>No targets currently configured. Add one above!</p>";
+                list.innerHTML = "<p style='color:gray;'>No stores tracked yet. Add one above!</p>";
                 return;
             }
-
-            listContainer.innerHTML = "";
+            list.innerHTML = "";
             data.stores.forEach(url => {
-                listContainer.innerHTML += `
+                list.innerHTML += `
                     <div class="store-item">
                         <span>🌐 ${url}</span>
                         <button class="delete-btn" onclick="removeStore('${url}')">Remove</button>
-                    </div>
-                `;
+                    </div>`;
             });
         }
 
         async function addStore() {
             const url = document.getElementById('storeUrl').value.trim();
-            if(!url) return;
-            
+            if (!url) return;
             document.getElementById('storeStatus').innerText = "Analyzing domain structure and saving...";
-            
-            const response = await fetch(`/add-store/?store_url=${encodeURIComponent(url)}`, { method: 'POST' });
-            const data = await response.json();
-            
+            const data = await fetch(`/add-store/?store_url=${encodeURIComponent(url)}`, { method: 'POST' }).then(r => r.json());
             document.getElementById('storeStatus').innerText = data.message;
-            document.getElementById('storeUrl').value = ""; // Clear input box
-            
-            fetchTrackedStores(); // Refresh tracking component array view
+            document.getElementById('storeUrl').value = "";
+            fetchTrackedStores();
         }
 
         async function removeStore(url) {
-            if(!confirm(`Stop tracking and delete ${url}?`)) return;
-            
-            const response = await fetch(`/remove-store/?store_url=${encodeURIComponent(url)}`, { method: 'DELETE' });
-            const data = await response.json();
-            
+            if (!confirm(`Stop tracking and delete ${url}?`)) return;
+            const data = await fetch(`/remove-store/?store_url=${encodeURIComponent(url)}`, { method: 'DELETE' }).then(r => r.json());
             alert(data.message);
-            fetchTrackedStores(); // Refresh tracking component array view
+            fetchTrackedStores();
         }
 
+        // ── Search ───────────────────────────────────────────────────────────
         async function searchPrices() {
-            const query = document.getElementById('searchQuery').value;
-            if(!query.trim()) return;
+            const query = document.getElementById('searchQuery').value.trim();
+            if (!query) return;
             document.getElementById('resultsBox').innerHTML = "<i>Aggregating responses across live targets...</i>";
-            
-            const response = await fetch(`/search/?query=${encodeURIComponent(query)}`);
-            const data = await response.json();
-            
-            const box = document.getElementById('resultsBox');
-            box.innerHTML = "";
+            const data = await fetch(`/search/?query=${encodeURIComponent(query)}`).then(r => r.json());
+            lastSearchData = data;
+            renderResultColumns(document.getElementById('resultsBox'), data.results, data.store_statuses, 'search');
+        }
 
-            if (data.results.length === 0) {
-                box.innerHTML = "<p>No matched items found across sources.</p>";
+        function renderResultColumns(container, results, statuses, panel) {
+            container.innerHTML = "";
+            const allStores = Object.keys(statuses || {});
+            if (allStores.length === 0) {
+                container.innerHTML = "<p style='color:#888;'>No stores are currently tracked.</p>";
                 return;
             }
-
-            // Group results by store
+            // Apply include/exclude filters before grouping
+            const filtered = applyFilters(results || [], panel);
             const byStore = {};
-            data.results.forEach(item => {
+            filtered.forEach(item => {
                 if (!byStore[item.store]) byStore[item.store] = [];
                 byStore[item.store].push(item);
             });
+            allStores.forEach(store => {
+                const error = statuses[store]?.error;
+                const items = byStore[store] || [];
+                const col   = document.createElement('div');
+                col.className = 'store-column';
+                const hdrClass = error ? 'store-column-header has-error' : 'store-column-header';
+                const count    = error ? 'error' : `${items.length} result${items.length !== 1 ? 's' : ''}`;
+                col.innerHTML  = `<div class="${hdrClass}">${error ? '⚠️' : '🏪'} ${store} <span style="font-weight:normal;opacity:.7;">(${count})</span></div>`;
+                if (error) {
+                    col.innerHTML += `<div class="store-error">${error}</div>`;
+                } else if (items.length === 0) {
+                    col.innerHTML += `<div class="store-empty">No results match the current filters.</div>`;
+                } else {
+                    items.forEach(item => {
+                        const e = document.createElement('div');
+                        e.className = 'product-entry';
+                        e.innerHTML = `<div>${item.product}</div><div class="price">${item.price}</div><a href="${item.url}" target="_blank">View Product →</a>`;
+                        col.appendChild(e);
+                    });
+                }
+                container.appendChild(col);
+            });
+        }
 
-            // Render one column per store
+        // ── History ──────────────────────────────────────────────────────────
+        async function fetchHistory() {
+            const data = await fetch('/history/?limit=50').then(r => r.json());
+            const list = document.getElementById('historyList');
+            if (!data.history.length) {
+                list.innerHTML = "<p style='color:gray;'>No searches recorded yet.</p>";
+                return;
+            }
+            list.innerHTML = "";
+            data.history.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.id = `hist-${entry.id}`;
+                item.innerHTML = `
+                    <div class="history-item-top">
+                        <span class="history-query">🔍 ${entry.query}</span>
+                        <span class="history-badge">${entry.result_count} result${entry.result_count !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="history-time">${entry.timestamp}</div>
+                    <div class="history-results" id="hist-results-${entry.id}"></div>`;
+                item.addEventListener('click', () => toggleHistoryItem(entry.id));
+                list.appendChild(item);
+            });
+        }
+
+        async function toggleHistoryItem(id) {
+            const item       = document.getElementById(`hist-${id}`);
+            const resultsDiv = document.getElementById(`hist-results-${id}`);
+            const wasOpen    = resultsDiv.classList.contains('open');
+
+            document.querySelectorAll('.history-results.open').forEach(el => {
+                el.classList.remove('open');
+                el.closest('.history-item').classList.remove('open');
+            });
+            if (wasOpen) return;
+
+            item.classList.add('open');
+            resultsDiv.innerHTML = "<i style='font-size:13px;color:#888;'>Loading saved results...</i>";
+            resultsDiv.classList.add('open');
+
+            const data = await fetch(`/history/${id}/results`).then(r => r.json());
+            if (!data.results?.length) {
+                resultsDiv.innerHTML = "<p style='color:gray;font-size:13px;'>No results saved for this search.</p>";
+                return;
+            }
+
+            lastHistoryExpanded = { id, results: data.results };
+
+            // Apply history filters, then group by store
+            const filtered = applyFilters(data.results, 'history');
+            const byStore  = {};
+            filtered.forEach(r => {
+                if (!byStore[r.store]) byStore[r.store] = [];
+                byStore[r.store].push(r);
+            });
+
+            resultsDiv.innerHTML = "";
+            if (!filtered.length) {
+                resultsDiv.innerHTML = "<p style='color:gray;font-size:13px;'>No results match the current filters.</p>";
+                return;
+            }
             Object.entries(byStore).forEach(([store, items]) => {
                 const col = document.createElement('div');
                 col.className = 'store-column';
-
-                col.innerHTML = `<div class="store-column-header">🏪 ${store} <span style="font-weight:normal;opacity:.7;">(${items.length})</span></div>`;
-
+                col.innerHTML = `<div class="store-column-header">🏪 ${store} (${items.length})</div>`;
                 items.forEach(item => {
-                    const entry = document.createElement('div');
-                    entry.className = 'product-entry';
-                    entry.innerHTML = `
-                        <div>${item.product}</div>
-                        <div class="price">${item.price}</div>
-                        <a href="${item.url}" target="_blank">View Product →</a>
-                    `;
-                    col.appendChild(entry);
+                    const e = document.createElement('div');
+                    e.className = 'product-entry';
+                    e.innerHTML = `<div>${item.product}</div><div class="price">${item.price}</div><a href="${item.url}" target="_blank">View Product →</a>`;
+                    col.appendChild(e);
                 });
-
-                box.appendChild(col);
+                resultsDiv.appendChild(col);
             });
+        }
+
+        async function clearHistory() {
+            if (!confirm('Clear all search history? This cannot be undone.')) return;
+            await fetch('/history/clear', { method: 'DELETE' });
+            fetchHistory();
         }
     </script>
 </body>

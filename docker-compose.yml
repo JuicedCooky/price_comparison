@@ -1,15 +1,10 @@
-# docker-compose.yml
 services:
-  redis:
-    image: redis:alpine
+  price-scraper:
+    build: .
+    container_name: price-scraper-app
     ports:
-      - "6379:6379"
-  
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: pricedb
-    ports:
-      - "5432:5432"
+      - "8000:8000"
+    volumes:
+      # This saves stores.json to the user's actual hard drive so data persists
+      - ./stores.json:/app/stores.json
+    restart: unless-stopped
