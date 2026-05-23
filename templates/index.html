@@ -5,13 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Price Aggregator</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 40px auto; padding: 20px; }
         .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
         input[type="text"] { padding: 10px; width: 70%; font-size: 16px; }
         button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
         .store-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }
         .delete-btn { background-color: #ff4d4d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
         .delete-btn:hover { background-color: #cc0000; }
+
+        /* Results grid — one column per store */
+        #resultsBox { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+        .store-column { flex: 1 1 220px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; }
+        .store-column-header {
+            background: #2c2c2c; color: #fff;
+            padding: 10px 14px; font-size: 13px;
+            font-weight: bold; word-break: break-all;
+        }
+        .product-entry { padding: 12px 14px; border-bottom: 1px solid #eee; font-size: 14px; }
+        .product-entry:last-child { border-bottom: none; }
+        .product-entry .price { color: #1a7a1a; font-weight: bold; font-size: 15px; }
+        .product-entry a { color: #0057b8; font-size: 12px; display: block; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -98,20 +111,40 @@
             const response = await fetch(`/search/?query=${encodeURIComponent(query)}`);
             const data = await response.json();
             
-            document.getElementById('resultsBox').innerHTML = "";
-            if(data.results.length === 0) {
-                document.getElementById('resultsBox').innerHTML = "No matched items found across sources.";
+            const box = document.getElementById('resultsBox');
+            box.innerHTML = "";
+
+            if (data.results.length === 0) {
+                box.innerHTML = "<p>No matched items found across sources.</p>";
                 return;
             }
 
+            // Group results by store
+            const byStore = {};
             data.results.forEach(item => {
-                document.getElementById('resultsBox').innerHTML += `
-                    <div class="card">
-                        <strong>🏪 ${item.store}</strong><br>
-                        ${item.product} - <span style="color: green; font-weight: bold;">${item.price}</span>
-                        <br><a href="${item.url}" target="_blank" style="font-size: 13px; color: blue;">View Product Page →</a>
-                    </div>
-                `;
+                if (!byStore[item.store]) byStore[item.store] = [];
+                byStore[item.store].push(item);
+            });
+
+            // Render one column per store
+            Object.entries(byStore).forEach(([store, items]) => {
+                const col = document.createElement('div');
+                col.className = 'store-column';
+
+                col.innerHTML = `<div class="store-column-header">🏪 ${store} <span style="font-weight:normal;opacity:.7;">(${items.length})</span></div>`;
+
+                items.forEach(item => {
+                    const entry = document.createElement('div');
+                    entry.className = 'product-entry';
+                    entry.innerHTML = `
+                        <div>${item.product}</div>
+                        <div class="price">${item.price}</div>
+                        <a href="${item.url}" target="_blank">View Product →</a>
+                    `;
+                    col.appendChild(entry);
+                });
+
+                box.appendChild(col);
             });
         }
     </script>
