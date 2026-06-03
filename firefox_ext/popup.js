@@ -585,15 +585,8 @@ async function detectCurrentPage() {
         if (!tabs[0]) return;
         currentTabUrl = tabs[0].url;
 
-        // ✅ MANIFEST V3 UPDATE: Use browser.scripting.executeScript
-        // We pass an absolute JavaScript function reference instead of a text string block.
-        const results = await browser.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            func: scrapeProductData 
-        });
-
-        // ✅ MANIFEST V3 UPDATE: Scripting API nests results under the .result property
-        const info = results && results[0]?.result;
+        const results = await browser.tabs.executeScript(tabs[0].id, { file: 'content_scraper.js' });
+        const info = results && results[0];
         if (!info || !info.isProduct) return;
 
         currentPageProduct = info;
@@ -608,83 +601,6 @@ async function detectCurrentPage() {
         // Page may be a privileged URL (about:, browser:) — silently ignore
         console.log('detectCurrentPage skipped:', e.message);
     }
-}
-
-// Separate function holding your scraping logic. 
-// Modernized to use clean let/const variables instead of 'var'.
-function scrapeProductData() {
-    let name = null;
-    let price = null;
-    let isProduct = false;
-
-    // 1. JSON-LD schema.org/Product
-    const schemas = document.querySelectorAll('script[type="application/ld+json"]');
-    for (let i = 0; i < schemas.length; i++) {
-        try {
-            const d = JSON.parse(schemas[i].textContent);
-            const items = Array.isArray(d) ? d : (d['@graph'] ? d['@graph'] : [d]);
-            for (let j = 0; j < items.length; j++) {
-                const it = items[j];
-                if (it['@type'] === 'Product' || (Array.isArray(it['@type']) && it['@type'].includes('Product'))) {
-                    isProduct = true;
-                    if (it.name) name = it.name;
-                    const off = it.offers;
-                    if (off) {
-                        const o = Array.isArray(off) ? off[0] : off;
-                        if (o.price != null) price = (o.priceCurrency || '') + String(o.price);
-                    }
-                    break;
-                }
-            }
-        } catch(e) {}
-        if (isProduct) break;
-    }
-
-    // 2. OG type=product
-    const ogType = document.querySelector('meta[property="og:type"]');
-    if (ogType && /^product/i.test(ogType.getAttribute('content') || '')) isProduct = true;
-
-    // 3. itemprop
-    const ipName  = document.querySelector('[itemprop="name"]');
-    const ipPrice = document.querySelector('[itemprop="price"]');
-    if (ipName || ipPrice) isProduct = true;
-    if (!name  && ipName)  name  = (ipName.getAttribute('content')  || ipName.textContent).trim();
-    if (!price && ipPrice) price = (ipPrice.getAttribute('content') || ipPrice.textContent).trim();
-
-    // 4. OG title / price fallback
-    if (!name) {
-        const ogT = document.querySelector('meta[property="og:title"]');
-        if (ogT) name = (ogT.getAttribute('content') || '').trim();
-    }
-    if (!price) {
-        const ogP = document.querySelector('meta[property="og:price:amount"],meta[property="product:price:amount"]');
-        if (ogP) {
-            const amt = (ogP.getAttribute('content') || '').trim();
-            const cur = document.querySelector('meta[property="og:price:currency"],meta[property="product:price:currency"]');
-            price = cur ? (cur.getAttribute('content') || '') + ' ' + amt : amt;
-        }
-    }
-
-    // 5. URL heuristic fallback
-    if (!isProduct && /\/(product|products|item|items|p|pd|detail|shop)[\/-]/i.test(location.pathname)) isProduct = true;
-
-    // 6. H1 name fallback
-    if (!name) { 
-        const h1 = document.querySelector('h1'); 
-        if (h1) name = h1.textContent.trim(); 
-    }
-
-    // 7. Price regex fallback
-    if (!price) {
-        const re = /[\$£€¥]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*[\$£€¥]/;
-        const els = document.querySelectorAll('[class*="price"],[id*="price"],[itemprop="price"],.price,.sale-price');
-        for (let k = 0; k < els.length; k++) {
-            const m = re.exec(els[k].textContent);
-            if (m) { price = m[0].trim(); break; }
-        }
-    }
-
-    return { isProduct: isProduct, name: name || document.title, price: price, url: location.href };
 }
 
 async function addCurrentPageStore() {
@@ -743,9 +659,12 @@ async function fetchSaved() {
 
     list.innerHTML = '';
     data.saved.forEach(entry => {
-        const item   = document.createElement('div');
+        const item = document.createElement('div');
         item.className = 'history-item';
         item.id        = `saved-${entry.id}`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'history-item-content';
 
         const top = document.createElement('div');
         top.className = 'history-item-top';
@@ -758,19 +677,8 @@ async function fetchSaved() {
         badge.className   = 'history-badge';
         badge.textContent = `${entry.result_count} result${entry.result_count !== 1 ? 's' : ''}`;
 
-        const removeBtn = document.createElement('button');
-        removeBtn.className   = 'action-btn danger';
-        removeBtn.style.cssText = 'font-size:11px;padding:3px 9px;margin-left:8px;flex-shrink:0;';
-        removeBtn.textContent = '✕ Remove';
-        removeBtn.title       = 'Remove from saved';
-        removeBtn.addEventListener('click', e => {
-            e.stopPropagation();
-            removeSavedEntry(entry.id);
-        });
-
         top.appendChild(q);
         top.appendChild(badge);
-        top.appendChild(removeBtn);
 
         const time = document.createElement('div');
         time.className   = 'history-time';
@@ -780,9 +688,21 @@ async function fetchSaved() {
         resultsDiv.className = 'history-results';
         resultsDiv.id        = `saved-results-${entry.id}`;
 
-        item.appendChild(top);
-        item.appendChild(time);
-        item.appendChild(resultsDiv);
+        contentDiv.appendChild(top);
+        contentDiv.appendChild(time);
+        contentDiv.appendChild(resultsDiv);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className   = 'history-remove-btn';
+        removeBtn.textContent = '✕ Remove';
+        removeBtn.title       = 'Remove from saved';
+        removeBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            removeSavedEntry(entry.id);
+        });
+
+        item.appendChild(contentDiv);
+        item.appendChild(removeBtn);
         item.addEventListener('click', () => toggleSavedItem(entry.id, entry.query));
         list.appendChild(item);
     });

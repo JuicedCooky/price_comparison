@@ -1,3 +1,11 @@
+**PriceBot Privacy Policy**
+
+PriceBot stores all data — including your search history, tracked store URLs, and cached page responses — locally on your device using Firefox's built-in storage API. No data is sent to any server operated by this extension.
+
+When you perform a search, the extension fetches pages directly from the retail stores you have configured. These requests come from your browser and are subject to those stores' own privacy policies. PriceBot does not intercept, log, or transmit the content of those responses to any third party.
+
+No analytics, telemetry, or crash reporting is collected.
+
 # price_comparison
 
 A FastAPI web app that searches multiple online stores simultaneously and aggregates product results by price.

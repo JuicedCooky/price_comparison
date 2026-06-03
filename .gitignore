@@ -2,3 +2,11 @@ __pycache__/
 build_command.txt
 dist/
 build/
+docker-compose.yml
+Dockerfile
+main.py
+price_tracker.db
+PriceScraper.spec
+requirements.txt
+stores.json
+templates/

@@ -2,13 +2,12 @@
   "manifest_version": 2,
   "name": "PriceBot",
   "version": "1.0",
-  "description": "Multi-store price comparison tool — scrapes and aggregates product prices from any website.",
+  "description": "Compares product prices across stores you configure. Fetches pages from those stores on demand; all data is stored locally on your device and never transmitted externally.",
   "permissions": [
     "storage",
     "tabs",
     "<all_urls>",
-    "activeTab",
-    "scripting"
+    "activeTab"
   ],
   "background": {
     "scripts": ["background.js"],
@@ -20,7 +19,13 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "pricebot-extension@yourdomain.com"
+      "id": "pricebot-extension@juicedcooky.com",
+      "strict_min_version": "91.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   }
 }

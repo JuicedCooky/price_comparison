@@ -94,6 +94,23 @@
         .history-save-btn:hover { background: #a07a00; color: #ffe066; }
         .history-save-btn.is-saved { background: #333; color: #aaa; cursor: default; border-radius: 0 7px 7px 0; }
         .history-save-btn.is-saved:hover { background: #333; color: #aaa; }
+        .history-remove-btn {
+            background: #7a0000;
+            color: #fff;
+            border: none;
+            border-left: 1px solid rgba(255,100,100,0.15);
+            padding: 0 15px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            flex-shrink: 0;
+            border-radius: 0 7px 7px 0;
+            transition: background 0.15s, color 0.15s;
+            letter-spacing: 0.02em;
+        }
+        .history-remove-btn:hover { background: #c00; color: #ffd0d0; }
         .history-item-top   { display: flex; justify-content: space-between; align-items: center; }
         .history-query      { font-weight: bold; font-size: 14px; }
         .history-badge      { background: #2c2c2c; color: #fff; border-radius: 10px; padding: 2px 9px; font-size: 11px; white-space: nowrap; }
