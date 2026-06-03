@@ -1,0 +1,26 @@
+{
+  "manifest_version": 2,
+  "name": "PriceBot",
+  "version": "1.0",
+  "description": "Multi-store price comparison tool — scrapes and aggregates product prices from any website.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "<all_urls>",
+    "activeTab",
+    "scripting"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "PriceBot — Price Comparison"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pricebot-extension@yourdomain.com"
+    }
+  }
+}

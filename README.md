@@ -69,3 +69,10 @@ The part after `?` tells the app which parameter the store uses (`s=`, `q=`, etc
 | `POST` | `/add-store/?store_url=<url>` | Add a store (domain or full search URL) |
 | `DELETE` | `/remove-store/?store_url=<url>` | Remove a store |
 | `GET` | `/search/?query=<term>` | Search all stores for a product |
+
+
+# Build Command
+
+```
+pyinstaller --clean -y --name "PriceScraper" --add-data "templates;templates" --hidden-import "cloudscraper" main.py
+```

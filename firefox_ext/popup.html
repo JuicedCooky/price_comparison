@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PriceBot</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; display: flex; width: 780px; height: 560px; overflow: hidden; background: #f0f0f0; }
+
+        /* ── Sidebar ── */
+        .sidebar { width: 150px; background: #1a1a1a; display: flex; flex-direction: column; flex-shrink: 0; padding-top: 20px; }
+        .sidebar-logo { color: #fff; font-size: 14px; font-weight: bold; padding: 0 14px 14px; border-bottom: 1px solid #333; margin-bottom: 8px; }
+        .tab-btn { background: none; border: none; border-left: 3px solid transparent; color: #999; font-size: 13px; padding: 11px 14px; text-align: left; cursor: pointer; transition: all 0.15s; width: 100%; }
+        .tab-btn:hover  { background: #262626; color: #fff; }
+        .tab-btn.active { background: #262626; color: #fff; border-left-color: #4a9eff; }
+        .sidebar-footer { margin-top: auto; padding: 10px; }
+        .cache-btn { background: #333; color: #aaa; border: none; font-size: 11px; padding: 6px 8px; border-radius: 4px; cursor: pointer; width: 100%; text-align: left; }
+        .cache-btn:hover { background: #444; color: #fff; }
+
+        /* ── Main ── */
+        .main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* ── Cards / inputs ── */
+        .card { background: #fff; border: 1px solid #ddd; padding: 14px; margin-bottom: 12px; border-radius: 8px; }
+        input[type="text"] { padding: 7px 10px; width: 62%; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
+        .action-btn { padding: 7px 14px; font-size: 13px; cursor: pointer; background: #2c2c2c; color: #fff; border: none; border-radius: 4px; margin-left: 6px; }
+        .action-btn:hover { background: #444; }
+        .action-btn.danger { background: #a00; }
+        .action-btn.danger:hover { background: #c00; }
+        .store-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed #eee; }
+        .delete-btn { background: #ff4d4d; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .delete-btn:hover { background: #cc0000; }
+
+        /* ── Filter card ── */
+        .filter-card { border-left: 3px solid #ddd; transition: border-color 0.2s; }
+        .filter-card.has-filters { border-left-color: #4a9eff; }
+        .filter-title { font-size: 13px; font-weight: bold; margin-bottom: 10px; color: #444; }
+        .filter-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+        .filter-row:last-child { margin-bottom: 0; }
+        .filter-label { font-size: 12px; font-weight: bold; white-space: nowrap; padding-top: 7px; min-width: 105px; }
+        .include-label { color: #1a7a1a; }
+        .exclude-label { color: #a00; }
+        .tag-box {
+            flex: 1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+            min-height: 32px; padding: 4px 7px;
+            border: 1px solid #ccc; border-radius: 4px;
+            cursor: text; background: #fafafa;
+        }
+        .tag-box:focus-within { border-color: #4a9eff; background: #fff; }
+        .tag { display: inline-flex; align-items: center; gap: 3px; border-radius: 10px; padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+        .tag-include { background: #e6f4ea; color: #1a6a1a; border: 1px solid #a8d5b0; }
+        .tag-exclude { background: #fde8e8; color: #a00;    border: 1px solid #f5b5b5; }
+        .tag-x { cursor: pointer; font-size: 14px; line-height: 1; opacity: 0.55; }
+        .tag-x:hover { opacity: 1; }
+        .tag-input { border: none; outline: none; background: transparent; font-size: 13px; min-width: 110px; flex: 1; }
+
+        /* ── Results grid ── */
+        #resultsBox { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+        .store-column { flex: 1 1 200px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; background: #fff; }
+        .store-column-header { background: #2c2c2c; color: #fff; padding: 8px 12px; font-size: 12px; font-weight: bold; word-break: break-all; }
+        .store-column-header.has-error { background: #7a1a1a; }
+        .store-error { padding: 12px; font-size: 12px; color: #a00; background: #fff5f5; border-left: 3px solid #e00; }
+        .store-empty { padding: 12px; font-size: 12px; color: #666; background: #fafafa; border-left: 3px solid #ccc; }
+        .product-entry { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .product-entry:last-child { border-bottom: none; }
+        .product-entry .price { color: #1a7a1a; font-weight: bold; font-size: 14px; margin-top: 2px; }
+        .product-entry a { color: #0057b8; font-size: 11px; display: block; margin-top: 3px; }
+
+        /* ── History ── */
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        .history-item { background: #fff; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; user-select: none; display: flex; align-items: stretch; overflow: hidden; padding: 0; }
+        .history-item:hover { border-color: #4a9eff; }
+        .history-item.open  { border-color: #4a9eff; }
+        .history-item-content { flex: 1; padding: 11px 14px; min-width: 0; }
+        .history-save-btn {
+            background: #6a4f00;
+            color: #fff;
+            border: none;
+            border-left: 1px solid rgba(255,200,80,0.15);
+            padding: 0 15px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            flex-shrink: 0;
+            border-radius: 0 7px 7px 0;
+            transition: background 0.15s, color 0.15s;
+            letter-spacing: 0.02em;
+        }
+        .history-save-btn:hover { background: #a07a00; color: #ffe066; }
+        .history-save-btn.is-saved { background: #333; color: #aaa; cursor: default; border-radius: 0 7px 7px 0; }
+        .history-save-btn.is-saved:hover { background: #333; color: #aaa; }
+        .history-item-top   { display: flex; justify-content: space-between; align-items: center; }
+        .history-query      { font-weight: bold; font-size: 14px; }
+        .history-badge      { background: #2c2c2c; color: #fff; border-radius: 10px; padding: 2px 9px; font-size: 11px; white-space: nowrap; }
+        .history-time       { font-size: 11px; color: #888; margin-top: 3px; }
+        .history-results    { display: none; margin-top: 12px; }
+        .history-results.open { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+
+        /* ── Status bar ── */
+        #statusBar { font-size: 12px; font-weight: bold; color: #0057b8; min-height: 16px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <div class="sidebar-logo">🤖 PriceBot</div>
+        <button class="tab-btn active" id="tab-search" data-tab="search">🔍 Search</button>
+        <button class="tab-btn"        id="tab-history" data-tab="history">📜 History</button>
+        <button class="tab-btn"        id="tab-saved"   data-tab="saved">⭐ Saved</button>
+        <div class="sidebar-footer">
+            <button class="cache-btn" id="clearCacheBtn" title="Force fresh fetches on next search">🗑 Clear Cache</button>
+        </div>
+    </nav>
+
+    <main class="main">
+
+        <!-- SEARCH PANEL -->
+        <div id="panel-search" class="panel active">
+
+            <div class="card">
+                <h3 style="margin-bottom:10px;font-size:14px;">Manage Stores</h3>
+                <input type="text" id="storeUrl" placeholder="storepage.com or search URL of a product (for detection)">
+                <button class="action-btn" id="addStoreBtn">Add Store</button>
+                <div id="statusBar"></div>
+                <h4 style="margin:10px 0 6px;font-size:13px;">Currently Tracked:</h4>
+                <div id="storeList"><i style="color:#888;font-size:13px;">Loading...</i></div>
+            </div>
+
+            <!-- Current page detection card (hidden until a product is detected) -->
+            <div class="card" id="current-page-card" style="border-left:3px solid #4a9eff;">
+                <div style="font-size:11px;color:#888;font-weight:bold;letter-spacing:.05em;margin-bottom:6px;">CURRENT PAGE</div>
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+                    <div style="min-width:0;flex:1;">
+                        <div id="cp-status" style="font-size:12px;color:#888;">Detecting current page...</div>
+                        <div id="cp-name"   style="font-size:13px;font-weight:bold;word-break:break-word;"></div>
+                        <div id="cp-price"  style="font-size:13px;color:#1a7a1a;margin-top:3px;"></div>
+                        <div id="cp-url"    style="font-size:11px;color:#888;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px;"></div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;">
+                        <button class="action-btn" id="cpSearchBtn"   style="font-size:12px;padding:5px 10px;">Use as Search</button>
+                        <button class="action-btn" id="cpAddStoreBtn" style="font-size:12px;padding:5px 10px;background:#1a4a7a;">+ Track Store</button>
+                    </div>
+                </div>
+                <div id="cp-error" style="font-size:12px;color:#a00;margin-top:6px;min-height:14px;"></div>
+            </div>
+
+            <div class="card">
+                <h3 style="margin-bottom:10px;font-size:14px;">Search for a Product</h3>
+                <input type="text" id="searchQuery" placeholder="e.g., Gundam RX-78">
+                <button class="action-btn" id="searchBtn">Search</button>
+            </div>
+
+            <!-- Filter card (search panel) -->
+            <div class="card filter-card" id="filter-card-search">
+                <div class="filter-title">🔎 Filter Results</div>
+                <div class="filter-row">
+                    <span class="filter-label include-label">✅ Must include</span>
+                    <div class="tag-box" id="tagbox-search-include">
+                        <span id="tags-search-include"></span>
+                        <input class="tag-input" id="taginput-search-include"
+                               placeholder="Word must appear — Enter to add">
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label exclude-label">🚫 Must exclude</span>
+                    <div class="tag-box" id="tagbox-search-exclude">
+                        <span id="tags-search-exclude"></span>
+                        <input class="tag-input" id="taginput-search-exclude"
+                               placeholder="Word must NOT appear — Enter to add">
+                    </div>
+                </div>
+            </div>
+
+            <h2 style="margin-bottom:12px;font-size:15px;">Results</h2>
+            <div id="resultsBox"><p style="color:#888;font-size:13px;">Run a search above to see results.</p></div>
+        </div>
+
+        <!-- HISTORY PANEL -->
+        <div id="panel-history" class="panel">
+            <div class="history-header">
+                <h2 style="font-size:15px;">📜 Search History</h2>
+                <button class="action-btn danger" id="clearHistoryBtn">Clear History</button>
+            </div>
+
+            <!-- Filter card (history panel) -->
+            <div class="card filter-card" id="filter-card-history" style="margin-bottom:14px;">
+                <div class="filter-title">🔎 Filter Expanded Results</div>
+                <div class="filter-row">
+                    <span class="filter-label include-label">✅ Must include</span>
+                    <div class="tag-box" id="tagbox-history-include">
+                        <span id="tags-history-include"></span>
+                        <input class="tag-input" id="taginput-history-include"
+                               placeholder="Word must appear — Enter to add">
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label exclude-label">🚫 Must exclude</span>
+                    <div class="tag-box" id="tagbox-history-exclude">
+                        <span id="tags-history-exclude"></span>
+                        <input class="tag-input" id="taginput-history-exclude"
+                               placeholder="Word must NOT appear — Enter to add">
+                    </div>
+                </div>
+            </div>
+
+            <div id="historyList"><i style="color:#888;font-size:13px;">Loading...</i></div>
+        </div>
+
+        <!-- SAVED PANEL -->
+        <div id="panel-saved" class="panel">
+            <div class="history-header">
+                <h2 style="font-size:15px;">⭐ Saved Searches</h2>
+                <button class="action-btn danger" id="clearSavedBtn">Clear Saved</button>
+            </div>
+
+            <div class="card filter-card" id="filter-card-saved" style="margin-bottom:14px;">
+                <div class="filter-title">🔎 Filter Expanded Results</div>
+                <div class="filter-row">
+                    <span class="filter-label include-label">✅ Must include</span>
+                    <div class="tag-box" id="tagbox-saved-include">
+                        <span id="tags-saved-include"></span>
+                        <input class="tag-input" id="taginput-saved-include"
+                               placeholder="Word must appear — Enter to add">
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label exclude-label">🚫 Must exclude</span>
+                    <div class="tag-box" id="tagbox-saved-exclude">
+                        <span id="tags-saved-exclude"></span>
+                        <input class="tag-input" id="taginput-saved-exclude"
+                               placeholder="Word must NOT appear — Enter to add">
+                    </div>
+                </div>
+            </div>
+
+            <div id="savedList"><i style="color:#888;font-size:13px;">Loading...</i></div>
+        </div>
+
+    </main>
+
+    <script src="popup.js"></script>
+</body>
+</html>
